@@ -24,6 +24,7 @@ namespace Reloaded_Mod_Template
 
         // This thread obtains the base address of Dolphin's emulated memory.
         private ReloadedProcess _reloadedProcess;
+        private IntPtr _lastPageAddress;    // Caching Dolphin's last page address in memory for performance reasons.
 
         // Size of emulated memory we want to find.
         private const long  EmulatedMemorySize = 0x2000000;
@@ -49,11 +50,11 @@ namespace Reloaded_Mod_Template
         }
 
         /// <summary>
-        /// Loops infinitely, trying to get Dolphin's base address every approx 4 seconds.
+        /// Obtains the base address of Dolphin emulator.
         /// </summary>
         public void UpdateDolphinBaseAddress()
         {
-            BaseAddress = GetBaseAddress(_reloadedProcess);
+            BaseAddress = GetBaseAddress();
             ValidBaseAddress = BaseAddress != IntPtr.Zero;
         }
 
@@ -61,43 +62,64 @@ namespace Reloaded_Mod_Template
         /// Retrieves the base address of the GameCube emulated memory.
         /// </summary>
         /// <returns></returns>
-        private unsafe IntPtr GetBaseAddress(ReloadedProcess process)
+        private unsafe IntPtr GetBaseAddress()
         {
-            var pages = process.GetPages();
+            // Check cached page address for potential valid page.
+            if (_lastPageAddress != IntPtr.Zero)
+            {
+                VirtualQueryEx(_reloadedProcess.ProcessHandle, _lastPageAddress, out var memoryInformation, (uint)sizeof(MEMORY_BASIC_INFORMATION));
+                if (IsDolphinPage(memoryInformation))
+                {
+                    return memoryInformation.BaseAddress;
+                }
+            }
+            
+            // Otherwise if last page address not set, find new page address.
+            var pages = _reloadedProcess.GetPages();
 
             foreach (var page in pages)
             {
-                // Check if page mapped and right size.
-                if (page.RegionSize == (IntPtr)EmulatedMemorySize && page.lType == PageType.Mapped)
+                if (IsDolphinPage(page))
                 {
-                    // Copied from Dolphin Memory Engine:
-
-                    /*
-                        Here, it's likely the right page, but it can happen that multiple pages with these criteria
-                        exist and have nothing to do with the emulated memory. Only the right page has valid
-                        working set information so an additional check is required that it is backed by physical
-                        memory.
-                    */
-
-                    PSAPI.PSAPI_WORKING_SET_EX_INFORMATION[] setInformation = new PSAPI.PSAPI_WORKING_SET_EX_INFORMATION[1];
-                    setInformation[0].VirtualAddress = page.BaseAddress;
-                    bool ok = PSAPI.QueryWorkingSetEx(process.ProcessHandle, setInformation, sizeof(PSAPI.PSAPI_WORKING_SET_EX_INFORMATION) * setInformation.Length);
-
-                    if (!ok)
-                        continue;
-
-                    // We found our address.
-                    if ((setInformation[0].VirtualAttributes.Flags & 0b1) == 1)
-                    {
-                        return page.BaseAddress;
-                    }
+                    _lastPageAddress = page.BaseAddress;
+                    return page.BaseAddress;
                 }
             }
 
             // Not found.
+            _lastPageAddress = IntPtr.Zero;
             return IntPtr.Zero;
         }
 
+        private unsafe bool IsDolphinPage(MEMORY_BASIC_INFORMATION memoryPage)
+        {
+            // Check if page mapped and right size.
+            if (memoryPage.RegionSize == (IntPtr)EmulatedMemorySize && memoryPage.lType == PageType.Mapped)
+            {
+                // Copied from Dolphin Memory Engine:
 
+                /*
+                    Here, it's likely the right page, but it can happen that multiple pages with these criteria
+                    exist and have nothing to do with the emulated memory. Only the right page has valid
+                    working set information so an additional check is required that it is backed by physical
+                    memory.
+                */
+
+                PSAPI.PSAPI_WORKING_SET_EX_INFORMATION[] setInformation = new PSAPI.PSAPI_WORKING_SET_EX_INFORMATION[1];
+                setInformation[0].VirtualAddress = memoryPage.BaseAddress;
+                bool ok = PSAPI.QueryWorkingSetEx(_reloadedProcess.ProcessHandle, setInformation, sizeof(PSAPI.PSAPI_WORKING_SET_EX_INFORMATION) * setInformation.Length);
+
+                if (!ok)
+                    return false;
+
+                // We found our address.
+                if ((setInformation[0].VirtualAttributes.Flags & 0b1) == 1)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
     }
 }

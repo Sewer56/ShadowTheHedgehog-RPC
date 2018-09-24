@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Net.Configuration;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
@@ -168,6 +169,7 @@ namespace Reloaded_Mod_Template.Shadow
             ---------------
         */
 
+        [HandleProcessCorruptedStateExceptions]
         public bool IsPlayingShadow()
         {
             Dolphin.UpdateDolphinBaseAddress();

@@ -56,8 +56,7 @@ namespace Reloaded_Mod_Template
 
         public void SetPresence()
         {
-            _shadow.Dolphin.UpdateDolphinBaseAddress();
-            if (_shadow.Dolphin.ValidBaseAddress && _shadow.IsPlayingShadow())
+            if (_shadow.IsPlayingShadow())
             {
                 // Contains the Stage Name
                 string currentDetails = "";
